@@ -188,6 +188,7 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
         /// <param name="productId">The ID of the product for the order.</param>
         /// <param name="side">Specifies whether to buy or sell.</param>
         /// <param name="orderConfiguration">Configuration details for the order.</param>
+        /// <param name="clientOrderId"></param>
         /// <returns>Order ID upon successful order creation; otherwise, null.</returns>
         private async Task<string> CreateOrderAsync(string productId, OrderSide side, OrderConfiguration orderConfiguration, string clientOrderId = null)
         {

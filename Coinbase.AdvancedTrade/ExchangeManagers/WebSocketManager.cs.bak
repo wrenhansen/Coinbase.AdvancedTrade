@@ -165,7 +165,7 @@ namespace Coinbase.AdvancedTrade
         /// <summary>
         /// Establishes a WebSocket connection asynchronously.
         /// </summary>
-        public async Task ConnectAsync()
+        public async ValueTask ConnectAsync()
         {
             // Acquire the semaphore to ensure exclusive access to this method.
             await _semaphore.WaitAsync().ConfigureAwait(false);
@@ -182,7 +182,7 @@ namespace Coinbase.AdvancedTrade
                 await _webSocket.ConnectAsync(_webSocketUri, CancellationToken.None).ConfigureAwait(false);
 
                 // Start the background task to receive WebSocket messages (fire and forget).
-                _ = ReceiveMessagesAsync();
+                _ = ReceiveMessagesAsync().AsTask();
             }
             finally
             {
@@ -194,7 +194,7 @@ namespace Coinbase.AdvancedTrade
         /// <summary>
         /// Closes the WebSocket connection asynchronously.
         /// </summary>
-        public async Task DisconnectAsync()
+        public async ValueTask DisconnectAsync()
         {
             // Acquire the semaphore to ensure exclusive access to this method.
             await _semaphore.WaitAsync().ConfigureAwait(false);
@@ -220,7 +220,7 @@ namespace Coinbase.AdvancedTrade
         /// </summary>
         /// <param name="products">An optional array of product IDs to subscribe to.</param>
         /// <param name="channelType">The type of channel to subscribe to.</param>
-        public async Task SubscribeAsync(string[] products, ChannelType channelType)
+        public async ValueTask SubscribeAsync(string[] products, ChannelType channelType)
         {
             // Check if the provided channel type is valid.
             if (!Enum.IsDefined(typeof(ChannelType), channelType))
@@ -249,7 +249,7 @@ namespace Coinbase.AdvancedTrade
         /// </summary>
         /// <param name="products">An optional array of product IDs to unsubscribe from.</param>
         /// <param name="channelType">The type of channel to unsubscribe from.</param>
-        public async Task UnsubscribeAsync(string[] products, ChannelType channelType)
+        public async ValueTask UnsubscribeAsync(string[] products, ChannelType channelType)
         {
             // Check if the provided channel type is valid.
             if (!Enum.IsDefined(typeof(ChannelType), channelType))
@@ -281,7 +281,7 @@ namespace Coinbase.AdvancedTrade
         /// </summary>
         /// <param name="products">An optional array of product IDs to subscribe to.</param>
         /// <param name="channelName">The name of the channel to subscribe to.</param>
-        private async Task SubscribeToChannelAsync(string[] products, string channelName)
+        private async ValueTask SubscribeToChannelAsync(string[] products, string channelName)
         {
             // Check if the channel name is null and throw an exception if it is.
             if (channelName == null) throw new ArgumentNullException(nameof(channelName));
@@ -313,7 +313,7 @@ namespace Coinbase.AdvancedTrade
         /// </summary>
         /// <param name="products">An optional array of product IDs to unsubscribe from.</param>
         /// <param name="channelName">The name of the channel to unsubscribe from.</param>
-        private async Task UnsubscribeFromChannelAsync(string[] products, string channelName)
+        private async ValueTask UnsubscribeFromChannelAsync(string[] products, string channelName)
         {
             // Check if the channel name is null and throw an exception if it is.
             if (channelName == null) throw new ArgumentNullException(nameof(channelName));
@@ -437,7 +437,7 @@ namespace Coinbase.AdvancedTrade
         /// <summary>
         /// Asynchronously receives WebSocket messages and processes them.
         /// </summary>
-        private async Task ReceiveMessagesAsync()
+        private async ValueTask ReceiveMessagesAsync()
         {
             // Check if the WebSocket is not open, and if not, return immediately.
             if (!IsWebSocketOpen)
