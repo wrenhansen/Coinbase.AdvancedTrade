@@ -1,66 +1,121 @@
-﻿using Coinbase.AdvancedTrade.Enums;
+using System;
+using Coinbase.AdvancedTrade.Enums;
 using Coinbase.AdvancedTrade.ExchangeManagers;
 using Coinbase.AdvancedTrade.Interfaces;
 
 namespace Coinbase.AdvancedTrade
 {
     /// <summary>
-    /// Provides access to various functionalities of the Coinbase API.
+    /// Provides access to the Coinbase Advanced Trade API.
     /// </summary>
-    public sealed class CoinbaseClient
+    public sealed class CoinbaseClient : IDisposable
     {
         /// <summary>
-        /// Gets the accounts manager, responsible for account-related operations.
+        /// Default WebSocket endpoint for market data.
+        /// </summary>
+        public const string DefaultMarketWebSocketUri = "wss://advanced-trade-ws.coinbase.com";
+
+        /// <summary>
+        /// Default WebSocket buffer size (5 MiB).
+        /// </summary>
+        public const int DefaultWebSocketBufferSize = 5 * 1024 * 1024;
+
+        /// <summary>
+        /// Account endpoints.
         /// </summary>
         public IAccountsManager Accounts { get; }
 
         /// <summary>
-        /// Gets the products manager, responsible for product-related operations.
+        /// Product endpoints.
         /// </summary>
         public IProductsManager Products { get; }
 
         /// <summary>
-        /// Gets the orders manager, responsible for order-related operations.
+        /// Order endpoints.
         /// </summary>
         public IOrdersManager Orders { get; }
 
         /// <summary>
-        /// Gets the fees manager, responsible for fee-related operations.
+        /// Fee endpoints.
         /// </summary>
         public IFeesManager Fees { get; }
 
         /// <summary>
-        /// Gets the public manager, responsible for public-related operations.
+        /// Public endpoints.
         /// </summary>
         public IPublicManager Public { get; }
 
         /// <summary>
-        /// Gets the WebSocket manager, responsible for managing WebSocket connections.
+        /// WebSocket manager for real-time feeds.
         /// </summary>
         public WebSocketManager WebSocket { get; }
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="CoinbaseClient"/> class for interacting with the Coinbase API.
+        /// Initializes a new instance of the <see cref="CoinbaseClient"/> class.
         /// </summary>
-        /// <param name="apiKey">The API key for authentication with Coinbase.</param>
-        /// <param name="apiSecret">The API secret for authentication with Coinbase.</param>
-        /// <param name="websocketBufferSize">The buffer size for WebSocket messages in bytes (Default 5,242,880 bytes/ 5 MB).</param>
-        /// <param name="apiKeyType">Specifies the type of API key used. This can be either a Legacy key (Depricated) or a Coinbase Developer Platform (CDP) key.</param>
-        public CoinbaseClient(string apiKey, string apiSecret, int websocketBufferSize = 5 * 1024 * 1024, ApiKeyType apiKeyType = ApiKeyType.CoinbaseDeveloperPlatform)
+        /// <param name="apiKey">The API key for authentication.</param>
+        /// <param name="apiSecret">The API secret for authentication.</param>
+        /// <param name="websocketBufferSize">The buffer size for WebSocket messages in bytes.</param>
+        /// <param name="apiKeyType">API key type (CDP or legacy).</param>
+        public CoinbaseClient(
+            string apiKey,
+            string apiSecret,
+            int websocketBufferSize = DefaultWebSocketBufferSize,
+            ApiKeyType apiKeyType = ApiKeyType.CoinbaseDeveloperPlatform)
+            : this(apiKey, apiSecret, DefaultMarketWebSocketUri, websocketBufferSize, apiKeyType)
         {
-            // Create an instance of CoinbaseAuthenticator with the provided credentials and API key type
+        }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CoinbaseClient"/> class with a specific WebSocket endpoint.
+        /// </summary>
+        /// <param name="apiKey">The API key for authentication.</param>
+        /// <param name="apiSecret">The API secret for authentication.</param>
+        /// <param name="webSocketUri">The WebSocket endpoint URI.</param>
+        /// <param name="websocketBufferSize">The buffer size for WebSocket messages in bytes.</param>
+        /// <param name="apiKeyType">API key type (CDP or legacy).</param>
+        public CoinbaseClient(
+            string apiKey,
+            string apiSecret,
+            string webSocketUri,
+            int websocketBufferSize = DefaultWebSocketBufferSize,
+            ApiKeyType apiKeyType = ApiKeyType.CoinbaseDeveloperPlatform)
+        {
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new ArgumentException("API key cannot be null or empty.", nameof(apiKey));
+            }
+
+            if (string.IsNullOrWhiteSpace(apiSecret))
+            {
+                throw new ArgumentException("API secret cannot be null or empty.", nameof(apiSecret));
+            }
+
+            if (string.IsNullOrWhiteSpace(webSocketUri))
+            {
+                throw new ArgumentException("WebSocket URI cannot be null or empty.", nameof(webSocketUri));
+            }
+
+            if (websocketBufferSize <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(websocketBufferSize), "WebSocket buffer size must be greater than zero.");
+            }
+
             var authenticator = new CoinbaseAuthenticator(apiKey, apiSecret, apiKeyType);
 
-            // Initialize various service managers with the authenticator
             Accounts = new AccountsManager(authenticator);
             Products = new ProductsManager(authenticator);
             Orders = new OrdersManager(authenticator);
             Fees = new FeesManager(authenticator);
             Public = new PublicManager(authenticator);
 
-            // Initialize WebSocketManager for real-time data feed
-            WebSocket = new WebSocketManager("wss://advanced-trade-ws.coinbase.com", apiKey, apiSecret, websocketBufferSize, apiKeyType);
+            WebSocket = new WebSocketManager(webSocketUri, apiKey, apiSecret, websocketBufferSize, apiKeyType);
         }
 
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            WebSocket?.Dispose();
+        }
     }
 }
