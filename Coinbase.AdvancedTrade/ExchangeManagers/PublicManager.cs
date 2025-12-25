@@ -1,31 +1,34 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Coinbase.AdvancedTrade.Enums;
 using Coinbase.AdvancedTrade.Interfaces;
-using RestSharp;
 using Coinbase.AdvancedTrade.Models.Public;
 using Coinbase.AdvancedTrade.Utilities;
 using Newtonsoft.Json;
-using System.Linq;
-using Coinbase.AdvancedTrade.Enums;
+using RestSharp;
 
 namespace Coinbase.AdvancedTrade.ExchangeManagers
 {
     /// <summary>
-    /// Manages public activities, including server time retrieval, for the Coinbase Advanced Trade API.
+    /// Manages public activities for the Coinbase Advanced Trade API.
     /// </summary>
     public class PublicManager : BaseManager, IPublicManager
     {
         /// <summary>
-        /// Initializes a new instance of the <see cref="PublicManager"/> class with an authenticator.
+        /// Initializes a new instance of the <see cref="PublicManager"/> class with an authenticator (optional).
         /// </summary>
-        /// <param name="authenticator">The Coinbase authenticator.</param>
-        public PublicManager(CoinbaseAuthenticator authenticator) : base(authenticator) { }
+        public PublicManager(CoinbaseAuthenticator authenticator) : base(authenticator)
+        {
+        }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PublicManager"/> class without authentication.
         /// </summary>
-        public PublicManager() : base(null) { }
+        public PublicManager() : base(null)
+        {
+        }
 
         /// <inheritdoc/>
         public async Task<ServerTime> GetCoinbaseServerTimeAsync()
@@ -33,190 +36,227 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
             try
             {
                 var request = new RestRequest("/api/v3/brokerage/time", Method.Get);
-                var response = await _client.ExecuteAsync<ServerTime>(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync<ServerTime>(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    return response.Data;
+                    throw CreateRequestFailedException("get server time", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to get server time. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                return response.Data;
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to get server time", ex);
+                throw new InvalidOperationException("Failed to get server time.", ex);
             }
         }
 
         /// <inheritdoc/>
         public async Task<List<PublicProduct>> ListPublicProductsAsync(int? limit = null, int? offset = null, string productType = null, List<string> productIds = null)
         {
+            if (limit.HasValue && limit.Value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero.");
+            }
+
+            if (offset.HasValue && offset.Value < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(offset), "Offset must be greater than or equal to zero.");
+            }
+
             try
             {
                 var request = new RestRequest("/api/v3/brokerage/market/products", Method.Get);
 
-                // Add query parameters if provided
                 if (limit.HasValue)
-                    request.AddParameter("limit", limit.Value);
+                {
+                    request.AddQueryParameter("limit", limit.Value.ToString());
+                }
+
                 if (offset.HasValue)
-                    request.AddParameter("offset", offset.Value);
-                if (!string.IsNullOrEmpty(productType))
-                    request.AddParameter("product_type", productType);
+                {
+                    request.AddQueryParameter("offset", offset.Value.ToString());
+                }
+
+                if (!string.IsNullOrWhiteSpace(productType))
+                {
+                    request.AddQueryParameter("product_type", productType);
+                }
+
                 if (productIds != null && productIds.Any())
                 {
-                    foreach (var productId in productIds)
+                    foreach (var productId in productIds.Where(p => !string.IsNullOrWhiteSpace(p)))
                     {
-                        request.AddParameter("product_ids", productId);
+                        request.AddQueryParameter("product_ids", productId);
                     }
                 }
 
-                var response = await _client.ExecuteAsync(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
-                    return UtilityHelper.DeserializeJsonElement<List<PublicProduct>>(responseDict, "products");
+                    throw CreateRequestFailedException("list public products", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to list public products. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
+                return UtilityHelper.DeserializeJsonElement<List<PublicProduct>>(responseDict, "products");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to list public products", ex);
+                throw new InvalidOperationException("Failed to list public products.", ex);
             }
         }
 
         /// <inheritdoc/>
         public async Task<PublicProduct> GetPublicProductAsync(string productId)
         {
-            if (string.IsNullOrEmpty(productId))
+            if (string.IsNullOrWhiteSpace(productId))
             {
-                throw new ArgumentException("Product ID cannot be null or empty", nameof(productId));
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
             }
 
             try
             {
                 var request = new RestRequest($"/api/v3/brokerage/market/products/{productId}", Method.Get);
-                var response = await _client.ExecuteAsync(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    var publicProduct = JsonConvert.DeserializeObject<PublicProduct>(response.Content);
-                    return publicProduct;
+                    throw CreateRequestFailedException("get public product", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to get public product. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                return JsonConvert.DeserializeObject<PublicProduct>(response.Content);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to get public product", ex);
+                throw new InvalidOperationException("Failed to get public product.", ex);
             }
         }
 
         /// <inheritdoc/>
         public async Task<PublicProductBook> GetPublicProductBookAsync(string productId, int? limit = null)
         {
-            if (string.IsNullOrEmpty(productId))
+            if (string.IsNullOrWhiteSpace(productId))
             {
-                throw new ArgumentException("Product ID cannot be null or empty", nameof(productId));
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (limit.HasValue && limit.Value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero.");
             }
 
             try
             {
                 var request = new RestRequest("/api/v3/brokerage/market/product_book", Method.Get);
-                request.AddParameter("product_id", productId);
+                request.AddQueryParameter("product_id", productId);
 
                 if (limit.HasValue)
                 {
-                    request.AddParameter("limit", limit.Value);
+                    request.AddQueryParameter("limit", limit.Value.ToString());
                 }
 
-                var response = await _client.ExecuteAsync(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
-                    return UtilityHelper.DeserializeJsonElement<PublicProductBook>(responseDict, "pricebook");
+                    throw CreateRequestFailedException("get public product book", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to get public product book. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
+                return UtilityHelper.DeserializeJsonElement<PublicProductBook>(responseDict, "pricebook");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to get public product book", ex);
+                throw new InvalidOperationException("Failed to get public product book.", ex);
             }
         }
 
         /// <inheritdoc/>
         public async Task<PublicMarketTrades> GetPublicMarketTradesAsync(string productId, int limit, long? start = null, long? end = null)
         {
-            if (string.IsNullOrEmpty(productId))
+            if (string.IsNullOrWhiteSpace(productId))
             {
-                throw new ArgumentException("Product ID cannot be null or empty", nameof(productId));
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (limit <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than zero.");
             }
 
             try
             {
                 var request = new RestRequest($"/api/v3/brokerage/market/products/{productId}/ticker", Method.Get);
-                request.AddParameter("limit", limit);
+                request.AddQueryParameter("limit", limit.ToString());
 
                 if (start.HasValue)
                 {
-                    request.AddParameter("start", start.Value);
+                    request.AddQueryParameter("start", start.Value.ToString());
                 }
 
                 if (end.HasValue)
                 {
-                    request.AddParameter("end", end.Value);
+                    request.AddQueryParameter("end", end.Value.ToString());
                 }
 
-                var response = await _client.ExecuteAsync(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    return JsonConvert.DeserializeObject<PublicMarketTrades>(response.Content);
+                    throw CreateRequestFailedException("get public market trades", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to get public market trades. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                return JsonConvert.DeserializeObject<PublicMarketTrades>(response.Content);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to get public market trades", ex);
+                throw new InvalidOperationException("Failed to get public market trades.", ex);
             }
         }
 
         /// <inheritdoc/>
         public async Task<List<PublicCandle>> GetPublicProductCandlesAsync(string productId, long start, long end, Granularity granularity)
         {
+            if (string.IsNullOrWhiteSpace(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (end < start)
+            {
+                throw new ArgumentException("End must be greater than or equal to start.", nameof(end));
+            }
+
             try
             {
                 var request = new RestRequest($"/api/v3/brokerage/market/products/{productId}/candles", Method.Get);
 
-                // Add query parameters
-                request.AddParameter("start", start);
-                request.AddParameter("end", end);
-                request.AddParameter("granularity", granularity.ToString());
+                request.AddQueryParameter("start", start.ToString());
+                request.AddQueryParameter("end", end.ToString());
+                request.AddQueryParameter("granularity", granularity.ToString());
 
-                var response = await _client.ExecuteAsync(request);
-                if (response.IsSuccessful)
+                var response = await _client.ExecuteAsync(request).ConfigureAwait(false);
+
+                if (!response.IsSuccessful)
                 {
-                    var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
-                    return UtilityHelper.DeserializeJsonElement<List<PublicCandle>>(responseDict, "candles");
+                    throw CreateRequestFailedException("get public product candles", response);
                 }
-                else
-                {
-                    throw new InvalidOperationException($"Failed to get public product candles. Status: {response.StatusCode}, Content: {response.Content}");
-                }
+
+                var responseDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(response.Content);
+                return UtilityHelper.DeserializeJsonElement<List<PublicCandle>>(responseDict, "candles");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to get public product candles", ex);
+                throw new InvalidOperationException("Failed to get public product candles.", ex);
             }
+        }
+
+        private static InvalidOperationException CreateRequestFailedException(string operation, RestResponse response)
+        {
+            var status = response?.StatusCode;
+            var content = response?.Content;
+            return new InvalidOperationException($"Failed to {operation}. Status: {status}, Content: {content}");
         }
     }
 }
