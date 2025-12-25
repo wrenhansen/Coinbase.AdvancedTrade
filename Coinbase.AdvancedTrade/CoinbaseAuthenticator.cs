@@ -82,7 +82,7 @@ namespace Coinbase.AdvancedTrade
             var options = new RestClientOptions(baseUrl)
             {
                 ThrowOnAnyError = false,
-                MaxTimeout = DefaultTimeoutMilliseconds
+                Timeout = TimeSpan.FromMilliseconds(DefaultTimeoutMilliseconds)
             };
 
             return new RestClient(options);
@@ -292,7 +292,7 @@ namespace Coinbase.AdvancedTrade
             }
 
             // Remove query string from the message, if present.
-            var queryStringIndex = message.IndexOf('?', StringComparison.Ordinal);
+            var queryStringIndex = message.IndexOf('?');
             if (queryStringIndex != -1)
             {
                 message = message.Substring(0, queryStringIndex);
