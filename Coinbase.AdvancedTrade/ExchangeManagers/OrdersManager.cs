@@ -1,12 +1,14 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+// Version: 1.1.3
 using Coinbase.AdvancedTrade.Enums;
 using Coinbase.AdvancedTrade.Interfaces;
 using Coinbase.AdvancedTrade.Models;
 using Coinbase.AdvancedTrade.Utilities;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Coinbase.AdvancedTrade.ExchangeManagers
 {
@@ -15,13 +17,11 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
     /// </summary>
     public class OrdersManager : BaseManager, IOrdersManager
     {
-        // Coinbase currently allows client_order_id up to 128 characters.
-        private const int MaxClientOrderIdLength = 128;
-
         /// <summary>
         /// Initializes a new instance of the <see cref="OrdersManager"/> class.
         /// </summary>
         /// <param name="authenticator">The authenticator for Coinbase API requests.</param>
+        /// <exception cref="ArgumentNullException">Thrown if the provided authenticator is null.</exception>
         public OrdersManager(CoinbaseAuthenticator authenticator) : base(authenticator)
         {
             if (authenticator == null)
@@ -29,6 +29,7 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                 throw new ArgumentNullException(nameof(authenticator), "Authenticator cannot be null.");
             }
         }
+
 
         /// <inheritdoc/>
         public async Task<List<Order>> ListOrdersAsync(
@@ -39,14 +40,17 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
             OrderType? orderType = null,
             OrderSide? orderSide = null)
         {
+            // Guard against invalid OrderStatus combinations
             ValidateOrderStatus(orderStatus);
 
+            // Use utility methods for conversion
             string[] orderStatusStrings = UtilityHelper.EnumToStringArray(orderStatus);
             string startDateString = UtilityHelper.FormatDateToISO8601(startDate);
             string endDateString = UtilityHelper.FormatDateToISO8601(endDate);
             string orderTypeString = orderType?.ToString();
             string orderSideString = orderSide?.ToString();
 
+            // Create an anonymous object with the parameters
             var paramsObj = new
             {
                 product_id = productId,
@@ -59,15 +63,14 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
 
             try
             {
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("GET", "/api/v3/brokerage/orders/historical/batch", UtilityHelper.ConvertToDictionary(paramsObj))
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
+                var response = await _authenticator.SendAuthenticatedRequestAsync("GET", "/api/v3/brokerage/orders/historical/batch", UtilityHelper.ConvertToDictionary(paramsObj))
+                               ?? new Dictionary<string, object>();
 
                 return UtilityHelper.DeserializeJsonElement<List<Order>>(response, "orders");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to list orders.", ex);
+                throw new InvalidOperationException("Failed to list orders", ex);
             }
         }
 
@@ -79,6 +82,7 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
             }
         }
 
+
         /// <inheritdoc/>
         public async Task<List<Fill>> ListFillsAsync(
             string orderId = null,
@@ -86,9 +90,11 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
             DateTime? startSequenceTimestamp = null,
             DateTime? endSequenceTimestamp = null)
         {
+            // Convert DateTime to the desired ISO8601 format
             string startSequenceTimestampString = UtilityHelper.FormatDateToISO8601(startSequenceTimestamp);
             string endSequenceTimestampString = UtilityHelper.FormatDateToISO8601(endSequenceTimestamp);
 
+            // Prepare request parameters using anonymous type
             var paramsObj = new
             {
                 order_id = orderId,
@@ -99,45 +105,56 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
 
             try
             {
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("GET", "/api/v3/brokerage/orders/historical/fills", UtilityHelper.ConvertToDictionary(paramsObj))
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
+                // Send authenticated request to the API and obtain response
+                var response = await _authenticator.SendAuthenticatedRequestAsync("GET", "/api/v3/brokerage/orders/historical/fills", UtilityHelper.ConvertToDictionary(paramsObj))
+                               ?? new Dictionary<string, object>();
 
+                // Deserialize response to obtain fills
                 return UtilityHelper.DeserializeJsonElement<List<Fill>>(response, "fills");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to list fills.", ex);
+                // Rethrow exception with additional context
+                throw new InvalidOperationException("Failed to list fills", ex);
             }
         }
+
+
 
         /// <inheritdoc/>
         public async Task<Order> GetOrderAsync(string orderId)
         {
+            // Validate input parameters
             if (string.IsNullOrWhiteSpace(orderId))
             {
-                throw new ArgumentException("Order ID cannot be null, empty, or whitespace.", nameof(orderId));
+                throw new ArgumentException("Order ID cannot be null, empty, or consist only of white-space characters.", nameof(orderId));
             }
 
             try
             {
+                // Construct the API endpoint using the provided order ID
                 string endpoint = $"/api/v3/brokerage/orders/historical/{orderId}";
 
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("GET", endpoint)
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
+                // Send authenticated request to the API and obtain response
+                var response = await _authenticator.SendAuthenticatedRequestAsync("GET", endpoint)
+                               ?? new Dictionary<string, object>();
 
+                // Deserialize response to obtain the order details
                 return UtilityHelper.DeserializeJsonElement<Order>(response, "order");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to get order '{orderId}'.", ex);
+                // Rethrow exception with additional context
+                throw new InvalidOperationException("Failed to get the order", ex);
             }
         }
+
+
 
         /// <inheritdoc/>
         public async Task<List<CancelOrderResult>> CancelOrdersAsync(string[] orderIds)
         {
+            // Validate the input parameter
             if (orderIds == null || orderIds.Length == 0)
             {
                 throw new ArgumentException("Order IDs array cannot be null or empty.", nameof(orderIds));
@@ -145,306 +162,249 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
 
             try
             {
+                // Set up the request body with the provided order IDs
                 var requestBody = new { order_ids = orderIds };
 
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/batch_cancel", null, requestBody)
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
+                // Send authenticated request to the API to cancel the orders and obtain response
+                var response = await _authenticator.SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/batch_cancel", null, requestBody)
+                               ?? new Dictionary<string, object>();
 
+                // Deserialize the response to obtain the cancel order results
                 return UtilityHelper.DeserializeJsonElement<List<CancelOrderResult>>(response, "results");
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Failed to cancel orders.", ex);
+                // Rethrow exception with additional context
+                throw new InvalidOperationException("Failed to cancel orders", ex);
             }
         }
 
+
+
+
         /// <summary>
-        /// Creates an order based on the provided configuration.
+        /// Creates an order based on the provided configurations.
         /// </summary>
+        /// <param name="productId">The ID of the product for the order.</param>
+        /// <param name="side">Specifies whether to buy or sell.</param>
+        /// <param name="orderConfiguration">Configuration details for the order.</param>
+        /// <returns>Order ID upon successful order creation; otherwise, null.</returns>
         private async Task<string> CreateOrderAsync(string productId, OrderSide side, OrderConfiguration orderConfiguration, string clientOrderId = null)
         {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
+            // Validate the provided product ID
+            if (string.IsNullOrWhiteSpace(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null, empty, or consist only of white-space characters.", nameof(productId));
+            }
 
+            // Validate the order side
             if (side != OrderSide.BUY && side != OrderSide.SELL)
             {
                 throw new ArgumentException("Invalid side value provided.", nameof(side));
             }
 
+
+            // Ensure order configuration is provided
             if (orderConfiguration is null)
             {
                 throw new ArgumentNullException(nameof(orderConfiguration), "Order configuration cannot be null.");
             }
 
-            var resolvedClientOrderId = ResolveClientOrderId(clientOrderId);
-
-            var orderRequest = new Dictionary<string, object>
-            {
-                { "client_order_id", resolvedClientOrderId },
-                { "product_id", productId },
-                { "side", side.ToString() },
-                { "order_configuration", orderConfiguration }
-            };
-
             try
             {
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders", null, orderRequest)
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
-
-                // Prefer the documented response shape: success + success_response/error_response.
-                if (TryGetBoolean(response, "success", out var success) && success)
+                // Generate or use provided client order ID
+                var normalizedClientOrderId = string.IsNullOrWhiteSpace(clientOrderId) ? null : clientOrderId.Trim();
+                if (normalizedClientOrderId != null && normalizedClientOrderId.Length > 128)
                 {
-                    var orderId = TryExtractOrderId(response);
-                    if (!string.IsNullOrWhiteSpace(orderId))
+                    throw new ArgumentException("clientOrderId must be 128 characters or less.", nameof(clientOrderId));
+                }
+                var finalClientOrderId = string.IsNullOrEmpty(normalizedClientOrderId)
+                    ? Guid.NewGuid().ToString()
+                    : normalizedClientOrderId;
+
+                // Construct the order request payload
+                var orderRequest = new
+                {
+                    client_order_id = finalClientOrderId,
+                    product_id = productId,
+                    side = side.ToString(),
+                    order_configuration = orderConfiguration
+                };
+
+                // Send a POST request to create the order
+                var response = await _authenticator.SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders", null, orderRequest) ?? new Dictionary<string, object>();
+
+                // Check if we have a 'success_response' in the received response
+                if (response.TryGetValue("success_response", out var successResponse))
+                {
+                    var successResponseStr = successResponse?.ToString();
+                    if (!string.IsNullOrEmpty(successResponseStr))
                     {
-                        return orderId;
-                    }
+                        var successResponseDict = JsonConvert.DeserializeObject<Dictionary<string, string>>(successResponseStr);
 
-                    throw new InvalidOperationException("Order creation succeeded but the response did not include 'order_id'.");
-                }
-
-                if (response.TryGetValue("error_response", out var errorResponseObj) && errorResponseObj != null)
-                {
-                    throw BuildOrderCreateException(errorResponseObj);
-                }
-
-                // Fallback: some failures might expose a message without an error_response wrapper.
-                if (response.TryGetValue("message", out var messageObj) && messageObj != null)
-                {
-                    throw new InvalidOperationException($"Order creation failed. Message: {messageObj}");
-                }
-
-                return null;
-            }
-            catch (Exception ex) when (!(ex is InvalidOperationException))
-            {
-                throw new InvalidOperationException($"Failed to create order. ClientOrderId: '{resolvedClientOrderId}'.", ex);
-            }
-        }
-
-        private static string ResolveClientOrderId(string clientOrderId)
-        {
-            if (string.IsNullOrWhiteSpace(clientOrderId))
-            {
-                return Guid.NewGuid().ToString();
-            }
-
-            var trimmed = clientOrderId.Trim();
-
-            if (trimmed.Length > MaxClientOrderIdLength)
-            {
-                throw new ArgumentException($"clientOrderId must be {MaxClientOrderIdLength} characters or fewer.", nameof(clientOrderId));
-            }
-
-            return trimmed;
-        }
-
-        private static void EnsureNotNullOrWhitespace(string value, string paramName)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-            {
-                throw new ArgumentException($"{paramName} cannot be null or empty.", paramName);
-            }
-        }
-
-        private static bool TryGetBoolean(Dictionary<string, object> dict, string key, out bool value)
-        {
-            value = false;
-
-            if (dict == null || string.IsNullOrWhiteSpace(key))
-            {
-                return false;
-            }
-
-            if (!dict.TryGetValue(key, out var obj) || obj == null)
-            {
-                return false;
-            }
-
-            if (obj is bool b)
-            {
-                value = b;
-                return true;
-            }
-
-            if (obj is JToken token && token.Type == JTokenType.Boolean)
-            {
-                value = token.Value<bool>();
-                return true;
-            }
-
-            return bool.TryParse(obj.ToString(), out value);
-        }
-
-        private static string TryExtractOrderId(Dictionary<string, object> response)
-        {
-            if (response == null)
-            {
-                return null;
-            }
-
-            // success_response.order_id is the documented location
-            if (response.TryGetValue("success_response", out var successResponseObj) && successResponseObj != null)
-            {
-                var successObj = CoerceToJObject(successResponseObj);
-                var orderId = successObj?.Value<string>("order_id");
-                if (!string.IsNullOrWhiteSpace(orderId))
-                {
-                    return orderId;
-                }
-            }
-
-            // Fallback: some APIs return order_id top-level
-            if (response.TryGetValue("order_id", out var orderIdObj) && orderIdObj != null)
-            {
-                var orderId = orderIdObj.ToString();
-                return string.IsNullOrWhiteSpace(orderId) ? null : orderId;
-            }
-
-            return null;
-        }
-
-        private static Exception BuildOrderCreateException(object errorResponseObj)
-        {
-            var errorObj = CoerceToJObject(errorResponseObj);
-            if (errorObj == null)
-            {
-                return new InvalidOperationException($"Order creation failed. Error response: {errorResponseObj}");
-            }
-
-            var error = errorObj.Value<string>("error") ?? "Unknown Error";
-            var message = errorObj.Value<string>("message") ?? "No Message";
-            var details = errorObj.Value<string>("error_details") ?? "No Details";
-
-            return new InvalidOperationException($"Order creation failed. Error: {error}. Message: {message}. Details: {details}");
-        }
-
-        private static JObject CoerceToJObject(object obj)
-        {
-            if (obj == null)
-            {
-                return null;
-            }
-
-            if (obj is JObject jObject)
-            {
-                return jObject;
-            }
-
-            if (obj is JToken token && token.Type == JTokenType.Object)
-            {
-                return (JObject)token;
-            }
-
-            var asString = obj.ToString();
-            if (!string.IsNullOrWhiteSpace(asString))
-            {
-                var trimmed = asString.Trim();
-                if (trimmed.StartsWith("{", StringComparison.Ordinal) && trimmed.EndsWith("}", StringComparison.Ordinal))
-                {
-                    try
-                    {
-                        return JObject.Parse(trimmed);
-                    }
-                    catch
-                    {
-                        // Ignore and return null below.
+                        // If 'order_id' is present in the success response, return it
+                        if (successResponseDict?.TryGetValue("order_id", out var orderId) == true)
+                        {
+                            return orderId;
+                        }
                     }
                 }
-            }
 
-            return null;
+                // If there's an 'error_response', handle it
+                else if (response.ContainsKey("error_response"))
+                {
+                    // Extract the error message from the response
+                    var errorResponseObj = response["error_response"];
+
+                    // Assuming errorResponseObj is a JsonElement
+                    if (errorResponseObj is JObject errorResponseObject) // Check if the errorResponseObj is a JSON object
+                    {
+                        var errorResponseValue = errorResponseObject.ToString(); // Get the raw JSON text of the object
+
+                        if (!string.IsNullOrEmpty(errorResponseValue))
+                        {
+                            // Deserialize the error response from the raw text
+                            var errorResponse = JsonConvert.DeserializeObject<Dictionary<string, string>>(errorResponseValue);
+
+                            if (errorResponse != null)
+                            {
+                                // Construct an error message using the provided details
+                                var error = errorResponse.ContainsKey("error") ? errorResponse["error"] : "Unknown Error";
+                                var message = errorResponse.ContainsKey("message") ? errorResponse["message"] : "No Message";
+                                var errorDetails = errorResponse.ContainsKey("error_details") ? errorResponse["error_details"] : "No Details";
+
+                                throw new Exception($"Order creation failed. Error: {error}. Message: {message}. Details: {errorDetails}");
+                            }
+                        }
+                    }
+
+                    // If error response is not in the expected format or is empty, return null (or handle as needed)
+                    return null;
+                }
+
+
+                // If we reach here, the order creation was not successful
+                return null;
+            }
+            catch (Exception ex)
+            {
+                // If an exception occurred, wrap it with additional information and rethrow
+                throw new InvalidOperationException($"Failed to create order: {ex.Message}", ex);
+            }
         }
 
         /// <summary>
-        /// Attempts to retrieve an order by its ID with retry logic.
+        /// Attempts to retrieve an order by its ID with retry logic, allowing for retries if the order is not immediately available.
         /// </summary>
+        /// <param name="orderId">The ID of the order to retrieve.</param>
+        /// <param name="maxRetries">The maximum number of retry attempts. Default is 20.</param>
+        /// <param name="delay">The delay in milliseconds between retries. Default is 500ms.</param>
+        /// <returns>The <see cref="Order"/> object if successfully retrieved; otherwise, null.</returns>
+        /// <exception cref="ArgumentException">Thrown when the order ID is null.</exception>
         private async Task<Order> GetOrderWithRetryAsync(string orderId, int maxRetries = 20, int delay = 500)
         {
+            // Validate input parameters
             if (string.IsNullOrWhiteSpace(orderId))
             {
-                throw new ArgumentException("Order ID cannot be null.", nameof(orderId));
-            }
-
-            if (maxRetries <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(maxRetries), "maxRetries must be greater than zero.");
-            }
-
-            if (delay < 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(delay), "delay must be greater than or equal to zero.");
+                throw new ArgumentException("Order ID cannot be null", nameof(orderId));
             }
 
             Order order = null;
             int retryCount = 0;
 
+            // Loop to retry fetching the order details
             while (retryCount < maxRetries)
             {
-                order = await GetOrderAsync(orderId).ConfigureAwait(false);
+                // Attempt to get the order details
+                order = await GetOrderAsync(orderId);
                 if (order != null)
                 {
+                    // Break the loop if the order is successfully retrieved
                     break;
                 }
 
+                // Increment the retry count
                 retryCount++;
 
-                if (delay > 0)
-                {
-                    await Task.Delay(delay).ConfigureAwait(false);
-                }
+                // Wait for the specified delay before retrying
+                await Task.Delay(delay);
             }
 
-            return order;
+            return order; // Return the order (or null if not retrieved within the retries)
         }
 
-        /// <inheritdoc/>
-        public async Task<string> CreateMarketOrderAsync(string productId, OrderSide side, string size, string clientOrderId = null)
-        {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(size, nameof(size));
 
+        /// <inheritdoc/>
+        public async Task<string> CreateMarketOrderAsync(string productId, OrderSide side, string amount)
+        {
+            // Ensure the product ID is provided and not empty
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            // Determine the market order details based on the side (BUY or SELL)
             MarketIoc marketDetails;
             switch (side)
             {
                 case OrderSide.BUY:
-                    marketDetails = new MarketIoc { QuoteSize = size };
+                    marketDetails = new MarketIoc { QuoteSize = amount }; // Buy orders use the QuoteSize
                     break;
                 case OrderSide.SELL:
-                    marketDetails = new MarketIoc { BaseSize = size };
+                    marketDetails = new MarketIoc { BaseSize = amount };  // Sell orders use the BaseSize
                     break;
                 default:
-                    throw new ArgumentException($"Invalid order side provided: {side}.", nameof(side));
+                    throw new ArgumentException($"Invalid order side provided: {side}.");
             }
 
+
+            // Create the order configuration using the determined market details
             var orderConfiguration = new OrderConfiguration
             {
                 MarketIoc = marketDetails
             };
 
-            return await CreateOrderAsync(productId, side, orderConfiguration, clientOrderId).ConfigureAwait(false);
+            // Call the underlying order creation method with the prepared configuration
+            return await CreateOrderAsync(productId, side, orderConfiguration);
         }
 
         /// <inheritdoc/>
-        public async Task<Order> CreateMarketOrderAsync(string productId, OrderSide side, string amount, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateMarketOrderAsync(string productId, OrderSide side, string amount, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateMarketOrderAsync(productId, side, amount, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateMarketOrderAsync(productId, side, amount);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
-        /// <inheritdoc/>
-        public async Task<string> CreateLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly = true, string clientOrderId = null)
-        {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(baseSize, nameof(baseSize));
-            EnsureNotNullOrWhitespace(limitPrice, nameof(limitPrice));
 
+        /// <inheritdoc/>
+        public async Task<string> CreateLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly)
+        {
+            // Validate input parameters
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (string.IsNullOrEmpty(baseSize))
+            {
+                throw new ArgumentException("Base size cannot be null or empty.", nameof(baseSize));
+            }
+
+            if (string.IsNullOrEmpty(limitPrice))
+            {
+                throw new ArgumentException("Limit price cannot be null or empty.", nameof(limitPrice));
+            }
+
+            // Prepare the order configuration for a Limit Order with GTC (Good Till Cancel)
+            // This defines the parameters of the limit order, such as the amount (baseSize),
+            // the price at which it's willing to trade (limitPrice), and whether it should only
+            // post this order to the order book (postOnly).
             var orderConfiguration = new OrderConfiguration
             {
                 LimitGtc = new LimitGtc
@@ -455,70 +415,123 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                 }
             };
 
-            return await CreateOrderAsync(productId, side, orderConfiguration, clientOrderId).ConfigureAwait(false);
+            // Delegate the actual order creation to a more general-purpose method, 
+            // passing in the prepared configuration.
+            return await CreateOrderAsync(productId, side, orderConfiguration);
         }
 
+
         /// <inheritdoc/>
-        public async Task<Order> CreateLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateLimitOrderGTCAsync(productId, side, baseSize, limitPrice, postOnly, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateLimitOrderGTCAsync(productId, side, baseSize, limitPrice, postOnly);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
-        /// <inheritdoc/>
-        public async Task<string> CreateLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly = true, string clientOrderId = null)
-        {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(baseSize, nameof(baseSize));
-            EnsureNotNullOrWhitespace(limitPrice, nameof(limitPrice));
 
-            var endUtc = endTime.ToUniversalTime();
-            if (endUtc <= DateTime.UtcNow)
+        /// <inheritdoc/>
+        public async Task<string> CreateLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly = true)
+        {
+            // Validate input parameters
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (string.IsNullOrEmpty(baseSize))
+            {
+                throw new ArgumentException("Base size cannot be null or empty.", nameof(baseSize));
+            }
+
+            if (string.IsNullOrEmpty(limitPrice))
+            {
+                throw new ArgumentException("Limit price cannot be null or empty.", nameof(limitPrice));
+            }
+
+            if (endTime <= DateTime.UtcNow)
             {
                 throw new ArgumentException("End time should be in the future.", nameof(endTime));
             }
 
+            // Construct the order configuration for a Limit Order with GTD (Good Till Date)
+            // This sets the parameters like the size of the order (baseSize), the desired trade price (limitPrice),
+            // the time until the order remains active (endTime), and if the order should only be posted to the order book (postOnly).
             var orderConfig = new OrderConfiguration
             {
                 LimitGtd = new LimitGtd
                 {
                     BaseSize = baseSize,
                     LimitPrice = limitPrice,
-                    EndTime = endUtc,
+                    EndTime = endTime,
                     PostOnly = postOnly
                 }
             };
 
-            return await CreateOrderAsync(productId, side, orderConfig, clientOrderId).ConfigureAwait(false);
+            // Delegate the actual order creation to the general-purpose method with the constructed configuration
+            return await CreateOrderAsync(productId, side, orderConfig);
         }
 
+
         /// <inheritdoc/>
-        public async Task<Order> CreateLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly = true, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly = true, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateLimitOrderGTDAsync(productId, side, baseSize, limitPrice, endTime, postOnly, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateLimitOrderGTDAsync(productId, side, baseSize, limitPrice, endTime, postOnly);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
+
         /// <inheritdoc/>
-        public async Task<string> CreateStopLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, string clientOrderId = null)
+        public async Task<string> CreateStopLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice)
         {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(baseSize, nameof(baseSize));
-            EnsureNotNullOrWhitespace(limitPrice, nameof(limitPrice));
-            EnsureNotNullOrWhitespace(stopPrice, nameof(stopPrice));
+            // Validate input parameters
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
 
-            var stopDirection = GetStopDirection(side);
+            if (string.IsNullOrEmpty(baseSize))
+            {
+                throw new ArgumentException("Base size cannot be null or empty.", nameof(baseSize));
+            }
 
+            if (string.IsNullOrEmpty(limitPrice))
+            {
+                throw new ArgumentException("Limit price cannot be null or empty.", nameof(limitPrice));
+            }
+
+            if (string.IsNullOrEmpty(stopPrice))
+            {
+                throw new ArgumentException("Stop price cannot be null or empty.", nameof(stopPrice));
+            }
+
+            // Determine stop direction based on the side of the order (BUY or SELL)
+            string stopDirection;
+            switch (side)
+            {
+                case OrderSide.BUY:
+                    stopDirection = "STOP_DIRECTION_STOP_UP";
+                    break;
+                case OrderSide.SELL:
+                    stopDirection = "STOP_DIRECTION_STOP_DOWN";
+                    break;
+                default:
+                    throw new ArgumentException($"Invalid order side provided: {side}.");
+            }
+
+
+            // Construct the order configuration for a Stop Limit Order with GTC (Good Till Cancel)
             var orderConfig = new OrderConfiguration
             {
                 StopLimitGtc = new StopLimitGtc
@@ -530,37 +543,71 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                 }
             };
 
-            return await CreateOrderAsync(productId, side, orderConfig, clientOrderId).ConfigureAwait(false);
+            // Delegate the actual order creation to the general-purpose method with the constructed configuration
+            return await CreateOrderAsync(productId, side, orderConfig);
         }
 
+
         /// <inheritdoc/>
-        public async Task<Order> CreateStopLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateStopLimitOrderGTCAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateStopLimitOrderGTCAsync(productId, side, baseSize, limitPrice, stopPrice, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateStopLimitOrderGTCAsync(productId, side, baseSize, limitPrice, stopPrice);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
-        /// <inheritdoc/>
-        public async Task<string> CreateStopLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime, string clientOrderId = null)
-        {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(baseSize, nameof(baseSize));
-            EnsureNotNullOrWhitespace(limitPrice, nameof(limitPrice));
-            EnsureNotNullOrWhitespace(stopPrice, nameof(stopPrice));
 
-            var endUtc = endTime.ToUniversalTime();
-            if (endUtc <= DateTime.UtcNow)
+
+        /// <inheritdoc/>
+        public async Task<string> CreateStopLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime)
+        {
+            // Validate input parameters
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (string.IsNullOrEmpty(baseSize))
+            {
+                throw new ArgumentException("Base size cannot be null or empty.", nameof(baseSize));
+            }
+
+            if (string.IsNullOrEmpty(limitPrice))
+            {
+                throw new ArgumentException("Limit price cannot be null or empty.", nameof(limitPrice));
+            }
+
+            if (string.IsNullOrEmpty(stopPrice))
+            {
+                throw new ArgumentException("Stop price cannot be null or empty.", nameof(stopPrice));
+            }
+
+            if (endTime <= DateTime.UtcNow)
             {
                 throw new ArgumentException("End time should be in the future.", nameof(endTime));
             }
 
-            var stopDirection = GetStopDirection(side);
+            // Determine stop direction based on the side of the order (BUY or SELL)
+            string stopDirection;
+            switch (side)
+            {
+                case OrderSide.BUY:
+                    stopDirection = "STOP_DIRECTION_STOP_UP";
+                    break;
+                case OrderSide.SELL:
+                    stopDirection = "STOP_DIRECTION_STOP_DOWN";
+                    break;
+                default:
+                    throw new ArgumentException($"Invalid order side provided: {side}.");
+            }
 
+
+            // Construct the order configuration for a Stop Limit Order with GTD (Good Till Date)
             var orderConfig = new OrderConfiguration
             {
                 StopLimitGtd = new StopLimitGtd
@@ -569,32 +616,49 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                     LimitPrice = limitPrice,
                     StopPrice = stopPrice,
                     StopDirection = stopDirection,
-                    EndTime = endUtc
+                    EndTime = endTime
                 }
             };
 
-            return await CreateOrderAsync(productId, side, orderConfig, clientOrderId).ConfigureAwait(false);
+            // Delegate the actual order creation to the general-purpose method with the constructed configuration
+            return await CreateOrderAsync(productId, side, orderConfig);
         }
 
+
         /// <inheritdoc/>
-        public async Task<Order> CreateStopLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateStopLimitOrderGTDAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateStopLimitOrderGTDAsync(productId, side, baseSize, limitPrice, stopPrice, endTime, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateStopLimitOrderGTDAsync(productId, side, baseSize, limitPrice, stopPrice, endTime);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
-        /// <inheritdoc/>
-        public async Task<string> CreateSORLimitIOCOrderAsync(string productId, OrderSide side, string baseSize, string limitPrice, string clientOrderId = null)
-        {
-            EnsureNotNullOrWhitespace(productId, nameof(productId));
-            EnsureNotNullOrWhitespace(baseSize, nameof(baseSize));
-            EnsureNotNullOrWhitespace(limitPrice, nameof(limitPrice));
 
+        /// <inheritdoc/>
+        public async Task<string> CreateSORLimitIOCOrderAsync(string productId, OrderSide side, string baseSize, string limitPrice)
+        {
+            // Validate input parameters
+            if (string.IsNullOrEmpty(productId))
+            {
+                throw new ArgumentException("Product ID cannot be null or empty.", nameof(productId));
+            }
+
+            if (string.IsNullOrEmpty(baseSize))
+            {
+                throw new ArgumentException("Base size cannot be null or empty.", nameof(baseSize));
+            }
+
+            if (string.IsNullOrEmpty(limitPrice))
+            {
+                throw new ArgumentException("Limit price cannot be null or empty.", nameof(limitPrice));
+            }
+
+            // Prepare the order configuration for a SOR Limit IOC order
             var orderConfiguration = new OrderConfiguration
             {
                 SorLimitIoc = new SorLimitIoc
@@ -604,40 +668,156 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                 }
             };
 
-            return await CreateOrderAsync(productId, side, orderConfiguration, clientOrderId).ConfigureAwait(false);
+            // Delegate the actual order creation to the general-purpose method with the prepared configuration
+            return await CreateOrderAsync(productId, side, orderConfiguration);
         }
 
+
         /// <inheritdoc/>
-        public async Task<Order> CreateSORLimitIOCOrderAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool returnOrder = true, string clientOrderId = null)
+        public async Task<Order> CreateSORLimitIOCOrderAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool returnOrder = true)
         {
             if (!returnOrder)
             {
                 throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
             }
 
-            var orderId = await CreateSORLimitIOCOrderAsync(productId, side, baseSize, limitPrice, clientOrderId).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(orderId) ? null : await GetOrderWithRetryAsync(orderId).ConfigureAwait(false);
+            string orderId = await CreateSORLimitIOCOrderAsync(productId, side, baseSize, limitPrice);
+
+            return await GetOrderWithRetryAsync(orderId);
         }
 
-        private static string GetStopDirection(OrderSide side)
+
+
+
+        // ---------------------------------------------------------------------
+        // Customer client_order_id support (additive, non-breaking)
+        // ---------------------------------------------------------------------
+
+        /// <inheritdoc/>
+        public async Task<string> CreateMarketOrderWithClientOrderIdAsync(string productId, OrderSide side, string amount, string clientOrderId)
         {
-            switch (side)
-            {
-                case OrderSide.BUY:
-                    return "STOP_DIRECTION_STOP_UP";
-                case OrderSide.SELL:
-                    return "STOP_DIRECTION_STOP_DOWN";
-                default:
-                    throw new ArgumentException($"Invalid order side provided: {side}.", nameof(side));
-            }
+            MarketIoc marketDetails = side == OrderSide.BUY
+                ? new MarketIoc { QuoteSize = amount }
+                : new MarketIoc { BaseSize = amount };
+
+            var orderConfiguration = new OrderConfiguration { MarketIoc = marketDetails };
+            return await CreateOrderAsync(productId, side, orderConfiguration, clientOrderId);
         }
 
         /// <inheritdoc/>
-        public async Task<bool> EditOrderAsync(string orderId, string price, string size)
+        public async Task<Order> CreateMarketOrderWithClientOrderIdAsync(string productId, OrderSide side, string amount, string clientOrderId, bool returnOrder)
         {
-            EnsureNotNullOrWhitespace(orderId, nameof(orderId));
-            EnsureNotNullOrWhitespace(price, nameof(price));
-            EnsureNotNullOrWhitespace(size, nameof(size));
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateMarketOrderWithClientOrderIdAsync(productId, side, amount, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<string> CreateLimitOrderGTCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly, string clientOrderId)
+        {
+            var cfg = new OrderConfiguration
+            {
+                LimitGtc = new LimitGtc { BaseSize = baseSize, LimitPrice = limitPrice, PostOnly = postOnly }
+            };
+            return await CreateOrderAsync(productId, side, cfg, clientOrderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<Order> CreateLimitOrderGTCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, bool postOnly, string clientOrderId, bool returnOrder)
+        {
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateLimitOrderGTCWithClientOrderIdAsync(productId, side, baseSize, limitPrice, postOnly, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<string> CreateLimitOrderGTDWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly, string clientOrderId)
+        {
+            var cfg = new OrderConfiguration
+            {
+                LimitGtd = new LimitGtd { BaseSize = baseSize, LimitPrice = limitPrice, EndTime = endTime, PostOnly = postOnly }
+            };
+            return await CreateOrderAsync(productId, side, cfg, clientOrderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<Order> CreateLimitOrderGTDWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, DateTime endTime, bool postOnly, string clientOrderId, bool returnOrder)
+        {
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateLimitOrderGTDWithClientOrderIdAsync(productId, side, baseSize, limitPrice, endTime, postOnly, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<string> CreateStopLimitOrderGTCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, string clientOrderId)
+        {
+            var stopDirection = side == OrderSide.BUY ? "STOP_DIRECTION_STOP_UP" : "STOP_DIRECTION_STOP_DOWN";
+            var cfg = new OrderConfiguration
+            {
+                StopLimitGtc = new StopLimitGtc { BaseSize = baseSize, LimitPrice = limitPrice, StopPrice = stopPrice, StopDirection = stopDirection }
+            };
+            return await CreateOrderAsync(productId, side, cfg, clientOrderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<Order> CreateStopLimitOrderGTCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, string clientOrderId, bool returnOrder)
+        {
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateStopLimitOrderGTCWithClientOrderIdAsync(productId, side, baseSize, limitPrice, stopPrice, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<string> CreateStopLimitOrderGTDWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime, string clientOrderId)
+        {
+            var stopDirection = side == OrderSide.BUY ? "STOP_DIRECTION_STOP_UP" : "STOP_DIRECTION_STOP_DOWN";
+            var cfg = new OrderConfiguration
+            {
+                StopLimitGtd = new StopLimitGtd { BaseSize = baseSize, LimitPrice = limitPrice, StopPrice = stopPrice, StopDirection = stopDirection, EndTime = endTime }
+            };
+            return await CreateOrderAsync(productId, side, cfg, clientOrderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<Order> CreateStopLimitOrderGTDWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string stopPrice, DateTime endTime, string clientOrderId, bool returnOrder)
+        {
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateStopLimitOrderGTDWithClientOrderIdAsync(productId, side, baseSize, limitPrice, stopPrice, endTime, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<string> CreateSORLimitIOCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string clientOrderId)
+        {
+            var cfg = new OrderConfiguration { SorLimitIoc = new SorLimitIoc { BaseSize = baseSize, LimitPrice = limitPrice } };
+            return await CreateOrderAsync(productId, side, cfg, clientOrderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<Order> CreateSORLimitIOCWithClientOrderIdAsync(string productId, OrderSide side, string baseSize, string limitPrice, string clientOrderId, bool returnOrder)
+        {
+            if (!returnOrder) throw new ArgumentException("returnOrder must be true to return an Order object.", nameof(returnOrder));
+            var orderId = await CreateSORLimitIOCWithClientOrderIdAsync(productId, side, baseSize, limitPrice, clientOrderId);
+            return await GetOrderWithRetryAsync(orderId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<bool> EditOrderAsync(string orderId, string price = null, string size = null)
+        {
+            if (string.IsNullOrEmpty(orderId))
+            {
+                throw new ArgumentException("Order ID cannot be null or empty.", nameof(orderId));
+            }
+
+            if (string.IsNullOrEmpty(price))
+            {
+                throw new ArgumentException("Price cannot be null or empty.", nameof(price));
+            }
+
+            if (string.IsNullOrEmpty(size))
+            {
+                throw new ArgumentException("Size cannot be null or empty.", nameof(size));
+            }
 
             var requestBody = new
             {
@@ -648,26 +828,18 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
 
             try
             {
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/edit", null, requestBody)
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
-
+                var response = await _authenticator.SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/edit", null, requestBody) ?? new Dictionary<string, object>();
                 var responseObject = UtilityHelper.DeserializeDictionary<Dictionary<string, JToken>>(response);
 
-                if (responseObject != null &&
-                    responseObject.TryGetValue("success", out var successValue) &&
-                    successValue != null &&
-                    successValue.Type == JTokenType.Boolean &&
-                    successValue.ToObject<bool>())
+                if (responseObject != null && responseObject.TryGetValue("success", out var successValue) && successValue.ToObject<bool>())
                 {
-                    return true;
+                    return true; // Operation was successful
                 }
 
+                // Start constructing the error message
                 var errorMessage = "Failed to edit order.";
 
-                if (responseObject?.TryGetValue("errors", out var errorsValue) == true &&
-                    errorsValue is JArray errorsArray &&
-                    errorsArray.Any())
+                if (responseObject?.TryGetValue("errors", out var errorsValue) == true && errorsValue is JArray errorsArray && errorsArray.Any())
                 {
                     var errorDetails = errorsArray.FirstOrDefault();
                     if (errorDetails != null && errorDetails["edit_failure_reason"] != null)
@@ -680,16 +852,30 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
             }
             catch (Exception ex)
             {
+                // Log or handle the exception as needed
                 throw new InvalidOperationException("Failed to edit order due to an exception.", ex);
             }
         }
 
+
         /// <inheritdoc/>
         public async Task<EditOrderPreviewResult> EditOrderPreviewAsync(string orderId, string price, string size)
         {
-            EnsureNotNullOrWhitespace(orderId, nameof(orderId));
-            EnsureNotNullOrWhitespace(price, nameof(price));
-            EnsureNotNullOrWhitespace(size, nameof(size));
+            // Validation of input parameters
+            if (string.IsNullOrEmpty(orderId))
+            {
+                throw new ArgumentException("Order ID cannot be null or empty.", nameof(orderId));
+            }
+
+            if (string.IsNullOrEmpty(price))
+            {
+                throw new ArgumentException("Price cannot be null or empty.", nameof(price));
+            }
+
+            if (string.IsNullOrEmpty(size))
+            {
+                throw new ArgumentException("Size cannot be null or empty.", nameof(size));
+            }
 
             var requestBody = new
             {
@@ -700,38 +886,42 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
 
             try
             {
-                var response = await _authenticator
-                    .SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/edit_preview", null, requestBody)
-                    .ConfigureAwait(false) ?? new Dictionary<string, object>();
-
+                var response = await _authenticator.SendAuthenticatedRequestAsync("POST", "/api/v3/brokerage/orders/edit_preview", null, requestBody) ?? new Dictionary<string, object>();
                 var responseObject = UtilityHelper.DeserializeDictionary<Dictionary<string, JToken>>(response);
 
-                if (responseObject != null &&
-                    responseObject.TryGetValue("errors", out var errorsValue) &&
-                    errorsValue is JArray errorsArray &&
-                    errorsArray.Any())
+                // Check if there are errors
+                if (responseObject != null && responseObject.TryGetValue("errors", out var errorsValue) && errorsValue is JArray errorsArray && errorsArray.Any())
                 {
-                    var errorMessage = "Failed to preview order edit.";
+                    // Convert errorsValue to a JArray and check if it's not empty
+                    var errorsList = errorsArray.ToList();
 
-                    foreach (var errorObj in errorsArray)
+                    if (errorsList.Any())
                     {
-                        if (errorObj is JObject errorObject)
-                        {
-                            if (errorObject.TryGetValue("edit_failure_reason", out var editFailureReason))
-                            {
-                                errorMessage += $" Edit Failure Reason: {editFailureReason}.";
-                            }
+                        var errorMessage = "Failed to preview order edit.";
 
-                            if (errorObject.TryGetValue("preview_failure_reason", out var previewFailureReason))
+                        // Iterate through error objects
+                        foreach (var errorObj in errorsList)
+                        {
+                            if (errorObj is JObject errorObject)
                             {
-                                errorMessage += $" Preview Failure Reason: {previewFailureReason}.";
+                                // Check for specific properties within each error object
+                                if (errorObject.TryGetValue("edit_failure_reason", out var editFailureReason))
+                                {
+                                    errorMessage += $" Edit Failure Reason: {editFailureReason.ToString()}.";
+                                }
+
+                                if (errorObject.TryGetValue("preview_failure_reason", out var previewFailureReason))
+                                {
+                                    errorMessage += $" Preview Failure Reason: {previewFailureReason.ToString()}.";
+                                }
                             }
                         }
-                    }
 
-                    throw new InvalidOperationException(errorMessage);
+                        throw new InvalidOperationException(errorMessage);
+                    }
                 }
 
+                // Assuming no errors or empty error array, populate the EditOrderPreviewResult from responseObject
                 var result = new EditOrderPreviewResult
                 {
                     Slippage = responseObject.TryGetValue("slippage", out var tempValue) ? tempValue.ToString() : string.Empty,
@@ -744,12 +934,17 @@ namespace Coinbase.AdvancedTrade.ExchangeManagers
                     AverageFilledPrice = responseObject.TryGetValue("average_filled_price", out tempValue) ? tempValue.ToString() : string.Empty
                 };
 
+
                 return result;
             }
             catch (Exception ex)
             {
+                // Log or handle the exception as needed
                 throw new InvalidOperationException("Failed to preview order edit due to an exception.", ex);
             }
         }
+
+
+
     }
 }
